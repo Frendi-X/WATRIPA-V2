@@ -1,8 +1,8 @@
 #include<LiquidCrystal_I2C.h>
 #include<SoftwareSerial.h>
 
-#define RX_Pin 9
-#define TX_Pin 10
+#define RX_Pin 10
+#define TX_Pin 11
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial mySerial(RX_Pin, TX_Pin);
@@ -53,7 +53,7 @@ unsigned long milis_sekarang;
 const unsigned long nilai = 100;
 
 int readSensor() {
-  int val = analogRead(sensorPin);
+  int val = analogRead(SoilMoisture_Pin);
   return val;
 }
 
@@ -72,7 +72,7 @@ int readSP_PH() {
 float DMS_readData() {
   digitalWrite(DMSpin, LOW);     // aktifkan DMS
   digitalWrite(indikator, HIGH); // led indikator built-in menyala
-  delay(5 * 1000);               // wait DMS capture data
+  //  delay(5 * 1000);               // wait DMS capture data
   AnalogValue = analogRead(adcPin);
 
   pH = (-0.0233 * ADC) + 12.698;  // ini adalah rumus regresi linier konversi adc ke pH
@@ -91,7 +91,7 @@ float DMS_readData() {
 
   digitalWrite(DMSpin, HIGH);
   digitalWrite(indikator, LOW);
-  delay(3 * 1000);               // wait for DMS ready
+  delay(1000);               // wait for DMS ready
 
   return lastReading;
 }
@@ -111,7 +111,7 @@ void setup() {
   pinMode(RelayPompa,  OUTPUT); pinMode(RelayAsam,  OUTPUT);  pinMode(RelayBasa,  OUTPUT);
   pinMode(SP_tanahPin, INPUT); pinMode(SP_PHPin, INPUT);
   pinMode(sensorPIR, INPUT_PULLUP);
-  digitalWrite(Buzzer, LOW);
+  digitalWrite(Buzzer, HIGH);
   digitalWrite(ledPin, LOW);
   digitalWrite(RelayPompa, HIGH); digitalWrite(RelayAsam, HIGH); digitalWrite(RelayBasa, HIGH);
 
@@ -228,11 +228,12 @@ void loop() {
   if (milis_sekarang - hitungan_milis >= nilai)
   {
     if (digitalRead(sensorPIR) == adaGerakan) {
-      Serial.print(digitalRead(sensorPIR));
-      digitalWrite(Buzzer, HIGH);
+      Serial.print("PIR Status: ");
+      Serial.println(digitalRead(sensorPIR));
+      digitalWrite(Buzzer, LOW);
       digitalWrite(ledPin, HIGH);
       delay(100);
-      digitalWrite(Buzzer, LOW);
+      digitalWrite(Buzzer, HIGH);
       digitalWrite(ledPin, LOW);
       delay(100);
     }
@@ -253,11 +254,11 @@ void loop() {
   lcd.print(" ");
 
   Serial.print(digitalRead(sensorPIR));
-  Serial.print("\t\tADC Soil : ");
+  Serial.print("\t\tADC Soil Mosture: ");
   Serial.print(kelembabantanah);
-  Serial.print("\t\tSP Tanah : ");
+  Serial.print("\t\tSP Tanah: ");
   Serial.print(SP_tanah);
-  Serial.print("\t\tSP PH : ");
+  Serial.print("\t\tSP PH: ");
   Serial.println(SP_PH);
 
   /* ------------------------------ KONTROL POMPA TANAH BASAH --------------------------- */
@@ -265,7 +266,7 @@ void loop() {
     Serial.println("Status: Tanah Basah");
     digitalWrite(RelayPompa, HIGH);
     lcd.setCursor(0, 0);
-    lcd.print("Tanah Basah ");
+    lcd.print("T.Basah ");
     sendd = 1;
   }
   /* ------------------------------ KONTROL POMPA TANAH NORMAL --------------------------- */
@@ -273,7 +274,7 @@ void loop() {
     Serial.println("Status: Tanah Normal");
     digitalWrite(RelayPompa, HIGH);
     lcd.setCursor(0, 0);
-    lcd.print("Tanah Normal");
+    lcd.print("T.Normal");
     sendd = 1;
   }
   /* ------------------------------ KONTROL POMPA TANAH KERING --------------------------- */
@@ -281,7 +282,7 @@ void loop() {
     Serial.println("Status: Tanah Kering");
     digitalWrite(RelayPompa, LOW);
     lcd.setCursor(0, 0);
-    lcd.print("Tanah Kering");
+    lcd.print("T.Kering");
     while (sendd <= 1) {
       if (sendd == 2) break;
       mySerial.print("#1?");
