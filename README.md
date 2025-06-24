@@ -9,3 +9,5 @@ Proyek ini adalah sebuah sistem pemantauan kondisi tanah dan kualitas air yang m
 * [Whatsapp : +6287888227410](https://wa.me/+6287888227410)
 * [Email    : frendirobotech@gmail.com](https://mail.google.com/mail/u/0/?view=cm&tf=1&fs=1&to=frendirobotech@gmail.com) atau [Email    : frendix45@gmail.com](https://mail.google.com/mail/u/0/?view=cm&tf=1&fs=1&to=frendix45@gmail.com)
 
+Arduino Millis
+
