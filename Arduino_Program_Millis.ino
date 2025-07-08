@@ -31,6 +31,7 @@ Servo myServo;
 /* ------------------------------------- VARIABEL DMS ------------------------------------ */
 int AnalogValue;
 float lastReading;
+float adcValue;
 float pH;
 /* ---------------------------------- VARIABEL SETPOINT PH ------------------------------- */
 int SP_tanah,
@@ -56,9 +57,9 @@ unsigned long milis_sekarang;
 const unsigned long nilai = 100;
 
 unsigned long lastServoMoveTime = 0;
-const unsigned long servoMoveInterval = 10; // waktu antar langkah pergerakan (ms)
+const unsigned long servoMoveInterval = 10;
 int currentAngle = 0;
-int servoDirection = 1; // 1 = maju (0→180), -1 = mundur (180→0)
+int servoDirection = 1; /* ---------->  1 = maju (0→180), -1 = mundur (180→0)  <---------- */
 
 unsigned long dmsLastReadTime = 0;
 unsigned long superloop = 0;
@@ -80,33 +81,51 @@ int readSP_PH() {
   int setPoint_tanah = map(val2, 0, 1023, 0, 14);
   return setPoint_tanah;
 }
+
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 /* ------------------------ FUNGSI PEMBACAAN SENSOR DMS (PH TANAH) ------------------------ */
 float DMS_readData() {
   digitalWrite(DMSpin, LOW);
   digitalWrite(indikator, HIGH);
-  AnalogValue = analogRead(adcPin);
+  adcValue = analogRead(adcPin);
 
-  pH = (-0.0233 * ADC) + 12.698;
-  if (pH != lastReading) {
-    lastReading = pH;
+  if (adcValue >= 700 && adcValue <= 850) {
+    // Normal → pH sekitar 6.0 – 8.0
+    PH = mapFloat(adcValue, 700, 850, 6.0, 8.0);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => pH Normal: ");
+    Serial.println(PH, 2);
+    return PH;
   }
-
-  if (lastReading > 8.0) {
-    lastReading = 0.0;
+  else if (adcValue >= 450 && adcValue <= 479) {
+    // Asam → pH 8.1, 650 = pH 12.0
+    PH = mapFloat(adcValue, 450, 479, 8.1, 12.0);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => Basa (pH: ");
+    Serial.print(PH, 2);
+    Serial.println(")");
+    return PH;
   }
-
-  if (lastReading < 0) {
-    lastReading = lastReading * -1;
+  else if (adcValue > 480 && adcValue <= 500) {
+    // Basa → pH 2.0, 660 = pH 5.9
+    PH = mapFloat(adcValue, 480, 500, 2.0, 5.9);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => Asam (pH: ");
+    Serial.print(PH, 2);
+    Serial.println(")");
+    return PH;
   }
-
-  Serial.print("ADC=");
-  Serial.print(AnalogValue);
-  Serial.print(" pH=");
-  Serial.println(lastReading, 1);
-  digitalWrite(DMSpin, HIGH);
-  digitalWrite(indikator, LOW);
-
-  return lastReading;
+  else {
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.println(" => Di luar rentang pengukuran");
+  }
 }
 /* -------------------------------- FUNGSI GERAKAN SERVO ---------------------------------- */
 void servoRun() {
@@ -124,9 +143,7 @@ void servoRun() {
       currentAngle = 0;
       servoDirection = 1;
     }
-
     myServo.write(currentAngle);
-    Serial.println(currentAngle);
   }
 }
 /* --------------------------------- FUNGSI PERINGATAN PIR -------------------------------- */
@@ -134,7 +151,7 @@ void handlePIR() {
   static bool motionDetected = false;
   static int beepStep = 0;
   static unsigned long beepTimer = 0;
-  const unsigned long beepDuration = 100;   // durasi ON atau OFF tiap beep
+  const unsigned long beepDuration = 100;   /* ------> Durasi ON atau OFF tiap beep <------ */
   bool pirState = digitalRead(sensorPIR) == adaGerakan;
 
   if (pirState && !motionDetected) {
@@ -142,6 +159,10 @@ void handlePIR() {
     beepStep = 1;
     beepTimer = millis();
     Serial.println("DEBUG: PIR Triggered");
+  }
+
+  if (motionDetected == true) {
+    servoRun();
   }
 
   if (beepStep == 1 && millis() - beepTimer >= 0) {
@@ -219,6 +240,7 @@ void setup() {
   }
   lcd.clear();
   delay(100);
+
   for (int i = 0; i <= 10; i++) {
     PH_Asam = readSP_PH();
     lcd.setCursor(0, 0);
@@ -305,7 +327,7 @@ void loop() {
   /* -------------------------------- PERINGATAN SENSOR PIR --------------------------- */
   handlePIR();
   /* ------------------------------------ GERAKANS SERVO ------------------------------ */
-  servoRun();
+  //servoRun();
   /* --------------------------------- PEMBACAAN SENSOR DMS --------------------------- */
   if (millis() - dmsLastReadTime > 1000) {
     dmsLastReadTime = millis();
@@ -324,7 +346,7 @@ void loop() {
     lcd.print(kelembabantanah);
     lcd.print(" ");
     lcd.setCursor(12, 1);
-    lcd.print(lastReading);
+    lcd.print(PH);
     lcd.print(" ");
 
     Serial.print("\t\tADC Soil Mosture: ");
