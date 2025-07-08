@@ -82,6 +82,12 @@ Masing-masing dibaca 10x dan ditampilkan di LCD.
 
 ---
 
+## 🔧 Program
+
+Arduino Millis
+
+---
+
 ## 📌 Catatan
 
 - Pastikan sensor pH analog menghasilkan rentang ADC sesuai logika `mapFloat()`:
