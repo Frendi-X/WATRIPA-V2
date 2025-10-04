@@ -1,11 +1,13 @@
 #include<LiquidCrystal_I2C.h>
 #include<SoftwareSerial.h>
+#include <Servo.h>
 
 #define RX_Pin 10
 #define TX_Pin 11
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial mySerial(RX_Pin, TX_Pin);
+Servo myServo;
 
 /* -------------------------------------- PIN RELAY ------------------------------------- */
 #define RelayPompa 7
@@ -16,6 +18,7 @@ SoftwareSerial mySerial(RX_Pin, TX_Pin);
 #define indikator 13
 #define adcPin A0
 /* ------------------------------------ PIN LAIN-LAIN ----------------------------------- */
+#define servoPin 2
 #define ledPin 3
 #define Buzzer 4
 #define sensorPIR 5
@@ -28,6 +31,7 @@ SoftwareSerial mySerial(RX_Pin, TX_Pin);
 /* ------------------------------------- VARIABEL DMS ------------------------------------ */
 int AnalogValue;
 float lastReading;
+float adcValue;
 float pH;
 /* ---------------------------------- VARIABEL SETPOINT PH ------------------------------- */
 int SP_tanah,
@@ -52,48 +56,143 @@ unsigned long hitungan_milis;
 unsigned long milis_sekarang;
 const unsigned long nilai = 100;
 
+unsigned long lastServoMoveTime = 0;
+const unsigned long servoMoveInterval = 10; // waktu antar langkah pergerakan (ms)
+int currentAngle = 0;
+int servoDirection = 1; // 1 = maju (0→180), -1 = mundur (180→0)
+
+unsigned long dmsLastReadTime = 0;
+unsigned long superloop = 0;
+
+/* ----------------------- FUNGSI PEMBACAAN SENSOR SOIL MOSTURE --------------------------- */
 int readSensor() {
   int val = analogRead(SoilMoisture_Pin);
   return val;
 }
-
+/* ---------------------- FUNGSI PEMBACAAN POTENSIO SETPOINT TANAH ------------------------ */
 int readSP_tanah() {
   int val1 = analogRead(SP_tanahPin);
   int setPoint_PH = val1;
   return setPoint_PH;
 }
-
+/* ------------------------ FUNGSI PEMBACAAN POTENSIO SETPOINT PH ------------------------- */
 int readSP_PH() {
   int val2 = analogRead(SP_PHPin);
   int setPoint_tanah = map(val2, 0, 1023, 0, 14);
   return setPoint_tanah;
 }
 
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+/* ------------------------ FUNGSI PEMBACAAN SENSOR DMS (PH TANAH) ------------------------ */
 float DMS_readData() {
-  digitalWrite(DMSpin, LOW);     // aktifkan DMS
-  digitalWrite(indikator, HIGH); // led indikator built-in menyala
-  //  delay(5 * 1000);               // wait DMS capture data
-  AnalogValue = analogRead(adcPin);
+  digitalWrite(DMSpin, LOW);
+  digitalWrite(indikator, HIGH);
+  adcValue = analogRead(adcPin);
 
-  pH = (-0.0233 * ADC) + 12.698;  // ini adalah rumus regresi linier konversi adc ke pH
-  if (pH != lastReading) {
-    lastReading = pH;
+  if (adcValue >= 430 && adcValue <= 460) {
+    // Normal → pH sekitar 6.0 – 8.0
+    PH = mapFloat(adcValue, 430, 460, 6.0, 8.0);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => pH Normal: ");
+    Serial.println(PH, 2);
+    return PH;
+  }
+  else if (adcValue >= 375 && adcValue <= 415) {
+    // Asam → pH 8.1, 650 = pH 12.0
+    PH = mapFloat(adcValue, 375, 415, 8.1, 12.0);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => Basa (pH: ");
+    Serial.print(PH, 2);
+    Serial.println(")");
+    return PH;
+  }
+  else if (adcValue > 420 && adcValue <= 430) {
+    // Basa → pH 2.0, 660 = pH 5.9
+    PH = mapFloat(adcValue, 420, 430, 2.0, 5.9);
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.print(" => Asam (pH: ");
+    Serial.print(PH, 2);
+    Serial.println(")");
+    return PH;
+  }
+  else {
+    Serial.print("ADC: ");
+    Serial.print(adcValue);
+    Serial.println(" => Di luar rentang pengukuran");
+  }
+}
+/* -------------------------------- FUNGSI GERAKAN SERVO ---------------------------------- */
+void servoRun() {
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - lastServoMoveTime >= servoMoveInterval) {
+    lastServoMoveTime = currentMillis;
+
+    currentAngle += servoDirection;
+
+    if (currentAngle >= 180) {
+      currentAngle = 180;
+      servoDirection = -1;
+    } else if (currentAngle <= 0) {
+      currentAngle = 0;
+      servoDirection = 1;
+    }
+    myServo.write(currentAngle);
+  }
+}
+/* --------------------------------- FUNGSI PERINGATAN PIR -------------------------------- */
+void handlePIR() {
+  static bool motionDetected = false;
+  static int beepStep = 0;
+  static unsigned long beepTimer = 0;
+  const unsigned long beepDuration = 100;   // durasi ON atau OFF tiap beep
+  bool pirState = digitalRead(sensorPIR) == adaGerakan;
+
+  if (pirState && !motionDetected) {
+    motionDetected = true;
+    beepStep = 1;
+    beepTimer = millis();
+    Serial.println("DEBUG: PIR Triggered");
   }
 
-  if (lastReading > 8.0) {
-    lastReading = 0.0; // nol kan nilai pH saat out of range
+  if (motionDetected == true) {
+    servoRun();
   }
 
-  Serial.print("ADC=");
-  Serial.print(AnalogValue);     // menampilkan nilai ADC di serial monitor pada baudrate 115200
-  Serial.print(" pH=");
-  Serial.println(lastReading, 1); // menampilkan nilai pH di serial monitor pada baudrate 115200
+  if (beepStep == 1 && millis() - beepTimer >= 0) {
+    digitalWrite(Buzzer, LOW);  // Beep ON
+    digitalWrite(ledPin, HIGH);
+    beepTimer = millis();
+    beepStep = 2;
+  }
+  else if (beepStep == 2 && millis() - beepTimer >= beepDuration) {
+    digitalWrite(Buzzer, HIGH); // Beep OFF
+    digitalWrite(ledPin, LOW);
+    beepTimer = millis();
+    beepStep = 3;
+  }
+  else if (beepStep == 3 && millis() - beepTimer >= beepDuration) {
+    digitalWrite(Buzzer, LOW);  // Beep ON (kedua)
+    digitalWrite(ledPin, HIGH);
+    beepTimer = millis();
+    beepStep = 4;
+  }
+  else if (beepStep == 4 && millis() - beepTimer >= beepDuration) {
+    digitalWrite(Buzzer, HIGH); // Beep OFF
+    digitalWrite(ledPin, LOW);
+    beepStep = 0;
+  }
 
-  digitalWrite(DMSpin, HIGH);
-  digitalWrite(indikator, LOW);
-  delay(1000);               // wait for DMS ready
-
-  return lastReading;
+  // Reset jika PIR sudah tidak mendeteksi gerakan
+  if (!pirState) {
+    motionDetected = false;
+  }
 }
 
 void setup() {
@@ -102,6 +201,7 @@ void setup() {
 
   lcd.init();
   lcd.backlight();
+  myServo.attach(servoPin);
 
   pinMode(DMSpin, OUTPUT);
   pinMode(indikator, OUTPUT);
@@ -109,7 +209,7 @@ void setup() {
   pinMode(Buzzer, OUTPUT);
   pinMode(ledPin, OUTPUT);
   pinMode(RelayPompa,  OUTPUT); pinMode(RelayAsam,  OUTPUT);  pinMode(RelayBasa,  OUTPUT);
-  pinMode(SP_tanahPin, INPUT); pinMode(SP_PHPin, INPUT);
+  pinMode(SP_tanahPin, INPUT_PULLUP); pinMode(SP_PHPin, INPUT_PULLUP); pinMode(adcPin, INPUT_PULLUP);
   pinMode(sensorPIR, INPUT_PULLUP);
   digitalWrite(Buzzer, HIGH);
   digitalWrite(ledPin, LOW);
@@ -140,6 +240,7 @@ void setup() {
   }
   lcd.clear();
   delay(100);
+
   for (int i = 0; i <= 10; i++) {
     PH_Asam = readSP_PH();
     lcd.setCursor(0, 0);
@@ -217,6 +318,8 @@ void loop() {
         }
         /* ----------------------- SEND DATA PH KE ESP32 CAM -------------------------- */
         mySerial.print("#" + String(PH) + "@");
+         /* ------------------ SEND DATA KELEMBABAN KE ESP32 CAM ---------------------- */
+        mySerial.print("#" + String(kelembabantanah) + "&");
         /* ------------------------------ RESET DATA ---------------------------------- */
         Data = "";
       }
@@ -224,100 +327,80 @@ void loop() {
   }
 
   /* -------------------------------- PERINGATAN SENSOR PIR --------------------------- */
-  milis_sekarang = millis();
-  if (milis_sekarang - hitungan_milis >= nilai)
-  {
-    if (digitalRead(sensorPIR) == adaGerakan) {
-      Serial.print("PIR Status: ");
-      Serial.println(digitalRead(sensorPIR));
-      digitalWrite(Buzzer, LOW);
-      digitalWrite(ledPin, HIGH);
-      delay(100);
-      digitalWrite(Buzzer, HIGH);
-      digitalWrite(ledPin, LOW);
-      delay(100);
+  handlePIR();
+  /* ------------------------------------ GERAKANS SERVO ------------------------------ */
+  //servoRun();
+  /* --------------------------------- PEMBACAAN SENSOR DMS --------------------------- */
+  if (millis() - dmsLastReadTime > 1000) {
+    dmsLastReadTime = millis();
+    PH = DMS_readData();
+  }
+
+  /* ------------------------------ SUPER LOOP/KONTROL LOOP UTAMA ------------------------ */
+  if (millis() - superloop > 500) {
+    superloop = millis();
+
+    /* ---------------------------- PEMBACAAN FUNGSI SENSOR-SENSOR ----------------------- */
+    kelembabantanah = readSensor();
+    SP_tanah = readSP_tanah();
+    /* -------------------------- LCD DISPLAY DATA KELEMBABAN DAN PH --------------------- */
+    lcd.setCursor(12, 0);
+    lcd.print(kelembabantanah);
+    lcd.print(" ");
+    lcd.setCursor(12, 1);
+    lcd.print(PH);
+    lcd.print(" ");
+
+    Serial.print("\t\tADC Soil Mosture: ");
+    Serial.print(kelembabantanah);
+    Serial.print("\t\tSP Tanah: ");
+    Serial.print(SP_tanah);
+    Serial.print("\t\tSP PH: ");
+    Serial.println(SP_PH);
+
+    /* ------------------------------ KONTROL POMPA TANAH BASAH --------------------------- */
+    if (kelembabantanah < tanahbasah) {
+      Serial.println("Status: Tanah Basah");
+      digitalWrite(RelayPompa, HIGH);
+      lcd.setCursor(0, 0);
+      lcd.print("T.Basah ");
     }
-  }
-
-  /* ---------------------------- PEMBACAAN FUNGSI SENSOR-SENSOR ----------------------- */
-  // PH = readSP_PH();
-  PH = DMS_readData();
-  kelembabantanah = readSensor();
-  SP_tanah = readSP_tanah();
-
-  /* -------------------------- LCD DISPLAY DATA KELEMBABAN DAN PH --------------------- */
-  lcd.setCursor(12, 0);
-  lcd.print(kelembabantanah);
-  lcd.print(" ");
-  lcd.setCursor(12, 1);
-  lcd.print(PH);
-  lcd.print(" ");
-
-  Serial.print(digitalRead(sensorPIR));
-  Serial.print("\t\tADC Soil Mosture: ");
-  Serial.print(kelembabantanah);
-  Serial.print("\t\tSP Tanah: ");
-  Serial.print(SP_tanah);
-  Serial.print("\t\tSP PH: ");
-  Serial.println(SP_PH);
-
-  /* ------------------------------ KONTROL POMPA TANAH BASAH --------------------------- */
-  if (kelembabantanah < tanahbasah) {
-    Serial.println("Status: Tanah Basah");
-    digitalWrite(RelayPompa, HIGH);
-    lcd.setCursor(0, 0);
-    lcd.print("T.Basah ");
-    sendd = 1;
-  }
-  /* ------------------------------ KONTROL POMPA TANAH NORMAL --------------------------- */
-  else if (kelembabantanah >= tanahbasah && kelembabantanah <= tanahkering) {
-    Serial.println("Status: Tanah Normal");
-    digitalWrite(RelayPompa, HIGH);
-    lcd.setCursor(0, 0);
-    lcd.print("T.Normal");
-    sendd = 1;
-  }
-  /* ------------------------------ KONTROL POMPA TANAH KERING --------------------------- */
-  else if (kelembabantanah > tanahkering) {
-    Serial.println("Status: Tanah Kering");
-    digitalWrite(RelayPompa, LOW);
-    lcd.setCursor(0, 0);
-    lcd.print("T.Kering");
-    while (sendd <= 1) {
-      if (sendd == 2) break;
-      mySerial.print("#1?");
-      sendd = 2;
+    /* ------------------------------ KONTROL POMPA TANAH NORMAL --------------------------- */
+    else if (kelembabantanah >= tanahbasah && kelembabantanah <= tanahkering) {
+      Serial.println("Status: Tanah Normal");
+      digitalWrite(RelayPompa, HIGH);
+      lcd.setCursor(0, 0);
+      lcd.print("T.Normal");
     }
-  }
-
-  /* -------------------------------- KONTROL POMPA PH ASAM ------------------------------ */
-  if (PH < PH_Asam) {
-    Serial.println("Status: PH Asam");
-    digitalWrite(RelayAsam, LOW);
-    lcd.setCursor(0, 1);
-    lcd.print("PH Asam  ");
-    senddd = 1;
-  }
-  /* ------------------------------- KONTROL POMPA PH NORMAL ------------------------------ */
-  else if (PH >= PH_Asam && PH <= PH_Basa) {
-    Serial.println("Status: PH Normal");
-    digitalWrite(RelayAsam, HIGH);  digitalWrite(RelayBasa, HIGH);
-    lcd.setCursor(0, 1);
-    lcd.print("PH Normal");
-    senddd = 1;
-  }
-  /* -------------------------------- KONTROL POMPA PH BASA --=---------------------------- */
-  else if (PH > PH_Basa) {
-    Serial.println("Status: PH Basa");
-    digitalWrite(RelayBasa, LOW);
-    lcd.setCursor(0, 1);
-    lcd.print("PH Basa  ");
-    while (senddd <= 1) {
-      if (senddd == 2) break;
-      mySerial.print("#2?");
-      senddd = 2;
+    /* ------------------------------ KONTROL POMPA TANAH KERING --------------------------- */
+    else if (kelembabantanah > tanahkering) {
+      Serial.println("Status: Tanah Kering");
+      digitalWrite(RelayPompa, LOW);
+      lcd.setCursor(0, 0);
+      lcd.print("T.Kering");
     }
+
+    /* -------------------------------- KONTROL POMPA PH ASAM ------------------------------ */
+    if (PH < PH_Asam) {
+      Serial.println("Status: PH Asam");
+      digitalWrite(RelayAsam, LOW);
+      lcd.setCursor(0, 1);
+      lcd.print("PH Asam  ");
+    }
+    /* ------------------------------- KONTROL POMPA PH NORMAL ------------------------------ */
+    else if (PH >= PH_Asam && PH <= PH_Basa) {
+      Serial.println("Status: PH Normal");
+      digitalWrite(RelayAsam, HIGH);  digitalWrite(RelayBasa, HIGH);
+      lcd.setCursor(0, 1);
+      lcd.print("PH Normal");
+    }
+    /* -------------------------------- KONTROL POMPA PH BASA --=---------------------------- */
+    else if (PH > PH_Basa) {
+      Serial.println("Status: PH Basa");
+      digitalWrite(RelayBasa, LOW);
+      lcd.setCursor(0, 1);
+      lcd.print("PH Basa  ");
+    }
+    Serial.println();
   }
-  delay(100);
-  Serial.println();
 }
