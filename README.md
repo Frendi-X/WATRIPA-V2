@@ -2,7 +2,7 @@
 
 ![alt text](https://github.com/Frendi-X/WATRIPA-V2/blob/main/Project.png?raw=true)
 
-Proyek ini adalah sebuah sistem pemantauan kondisi tanah dan kualitas air yang menggunakan ESP32-CAM yang terhubung ke Telegram Bot. Sistem ini dapat mengirimkan data terkait status tanah (kering, normal, basah), status pompa, nilai pH tanah, serta foto objek (misalnya tanaman atau area tanah) kepada pengguna melalui pesan Telegram. Sistem ini juga memungkinkan pengguna untuk mengontrol beberapa aspek melalui perintah yang dikirimkan ke bot Telegram, seperti menyalakan flash kamera dan meminta foto. [SKRIPSI - Mahasiswa Teknik Elektro  - UMPO]
+Proyek ini adalah sebuah sistem pemantauan kondisi tanah dan kualitas air yang menggunakan ESP32-CAM yang terhubung ke Telegram Bot. Sistem ini dapat mengirimkan data terkait status tanah (kering, normal, basah), status pompa, nilai pH tanah, serta foto objek (misalnya tanaman atau area tanah) kepada pengguna melalui pesan Telegram. Sistem ini juga memungkinkan pengguna untuk mengontrol beberapa aspek melalui perintah yang dikirimkan ke bot Telegram, seperti menyalakan flash kamera dan meminta foto. [SKRIPSI - Teknik Elektro UMPO]
 
 # 🌱 Smart Soil & pH Monitoring System with Arduino
 
